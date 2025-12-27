@@ -10,7 +10,7 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repo
+      - name: Checkout master
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -20,20 +20,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
 
-      - name: Checkout test branch
-        run: |
-          git fetch origin test || true
-          if (git show-ref --verify --quiet refs/heads/test) {
-            git checkout test
-          } else {
-            git checkout -b test
-          }
-
-      - name: Rebase from remote
-        run: |
-          git pull origin test --rebase || echo "rebase conflicts will be resolved later"
-
-      - name: Update meta4 files (real parse, no mock)
+      - name: Update meta4 files
         shell: pwsh
         run: |
           Set-Location $env:GITHUB_WORKSPACE
@@ -51,23 +38,22 @@ jobs:
               foreach ($node in $xml.metalink.file) {
                   $name = $node.name
 
+                  # 从文件名解析 KB（Windows / .NET 通用）
                   if ($name -match '(kb\d{6,8})') {
-                      $kb = $Matches[1]
+                      $kbId = $Matches[1]
 
-                      # ===============================
-                      # TODO: 这里接你已有的解析逻辑
-                      # 例如：
-                      # - Windows Update Catalog HTML
-                      # - 你已有的 patch_list.json
-                      # - 你 repo 里已经生成的 run log
+                      # ==================================================
+                      # TODO: 这里接你“真实”的解析结果
+                      # 你已经有的数据来源之一：
+                      # - patch_list.json
+                      # - 你已有的 catalog 抓取逻辑
                       #
-                      # 你最终要得到三个真实值：
-                      # $newName
-                      # $newHash
-                      # $newUrl
-                      # ===============================
+                      # 最终必须给出：
+                      #   $newName
+                      #   $newHash
+                      #   $newUrl
+                      # ==================================================
 
-                      # 当前行为：如果没有新数据，就跳过
                       if (-not $newName -or -not $newHash -or -not $newUrl) {
                           continue
                       }
@@ -81,7 +67,7 @@ jobs:
                           $node.hash.'#text' = $newHash
                           $node.url = $newUrl
                           $changed = $true
-                          Write-Host "Updated ${kb}"
+                          Write-Host "Updated ${kbId}"
                       }
                   }
               }
@@ -91,20 +77,11 @@ jobs:
               }
           }
 
-      - name: Resolve conflicts (ours)
-        shell: pwsh
-        run: |
-          $conflicts = git diff --name-only --diff-filter=U
-          foreach ($f in $conflicts) {
-              git checkout --ours $f
-              git add $f
-          }
-
-      - name: Commit
+      - name: Commit changes
         run: |
           git add Scripts
-          git commit -m "auto: refresh meta4 KB entries" || echo "No changes"
+          git commit -m "auto: update meta4 from existing KB entries" || echo "No changes"
 
-      - name: Push to test
+      - name: Push to master
         run: |
-          git push origin test --force-with-lease
+          git push origin master
