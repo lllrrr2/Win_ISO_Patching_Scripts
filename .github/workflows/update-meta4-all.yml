@@ -1,90 +1,100 @@
-name: Generate Meta4 & Release Note
+name: Generate Windows Meta4 Updates
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Source branch to generate meta4'
-        default: '2025.11d'
 
 jobs:
-  build:
+  generate-meta4:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.inputs.branch }}
+    - name: Checkout source
+      uses: actions/checkout@v3
+      with:
+        ref: 2025.11d  # 指定旧分支作为基准
 
-      - name: Set PowerShell Execution Policy
-        run: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+    - name: Setup PowerShell
+      shell: pwsh
+      run: |
+        Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
 
-      - name: Parse Meta4 and Generate Release Note
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          
-          $outputDir = "$env:GITHUB_WORKSPACE/Scripts"
-          $releaseNote = "$env:GITHUB_WORKSPACE/RELEASE_NOTE.txt"
-          $branchTarget = "2025.12b-test"
+    - name: Generate meta4 files
+      shell: pwsh
+      run: |
+        # 进入工作目录
+        Set-Location $env:GITHUB_WORKSPACE
 
-          git fetch origin $branchTarget || git checkout -b $branchTarget
+        # 输出日志
+        Write-Host "Generating meta4 files..."
 
-          $releaseText = ""
+        # 遍历 Scripts 目录下所有 meta4 文件
+        $meta4Files = Get-ChildItem Scripts/*.meta4
+        foreach ($meta4 in $meta4Files) {
+            $meta4Name = $meta4.Name.ToLower()
+            if ($meta4Name -match "_x64\.meta4$") {
+                $arch = "x64"
+            } elseif ($meta4Name -match "_x86\.meta4$") {
+                $arch = "x86"
+            } elseif ($meta4Name -match "_arm64\.meta4$") {
+                $arch = "arm64"
+            } else {
+                Write-Host "Skipping unknown architecture: $($meta4.Name)"
+                continue
+            }
 
-          Get-ChildItem "$outputDir" -Filter "*.meta4" | ForEach-Object {
-              $meta4File = $_
-              [xml]$meta4 = Get-Content -Path $meta4File.FullName
+            # 读取 XML
+            [xml]$xmlContent = Get-Content $meta4.FullName
 
-              # 架构识别
-              $meta4Name = $meta4File.Name.ToLower()
-              if ($meta4Name -match "_x64\.meta4$") { $arch = "x64" }
-              elseif ($meta4Name -match "_x86\.meta4$") { $arch = "x86" }
-              elseif ($meta4Name -match "_arm64\.meta4$") { $arch = "arm64" }
-              else { $arch = "Unknown" }
+            # 新 XML 集合
+            $updatedXml = @()
+            $updatedXml += '<metalink xmlns="urn:ietf:params:xml:ns:metalink" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="metalink4.xsd">'
 
-              $updatedXml = @()
-              $updatedXml += '<metalink xmlns="urn:ietf:params:xml:ns:metalink">'
-              $updatedXml += '  <file name="dummy">DUMMY</file>' # placeholder
+            foreach ($file in $xmlContent.metalink.file) {
+                $fileName = $file.name
+                $hashType = $file.hash.type
+                $hash = $file.hash.InnerText
+                $url = $file.url.InnerText
 
-              foreach ($file in $meta4.metalink.file) {
-                  $fileName = $file.name
-                  $hashType = $file.hash.type
-                  $hash     = $file.hash.'#text'
-                  $url      = $file.url.'#text'
+                Write-Host "[$arch] KB: $fileName | Hash: $hash | URL: $url"
 
-                  if ($fileName -match "kb(\d+)") { $kbId = $matches[1] } else { $kbId = "Unknown" }
+                $updatedXml += "  <file name=`"$fileName`">"
+                $updatedXml += "    <hash type=`"$hashType`">$hash</hash>"
+                $updatedXml += "    <url>$url</url>"
+                $updatedXml += "  </file>"
+            }
 
-                  Write-Host "Found KB: $kbId [$arch]"
-                  Write-Host "  Hash : $hash ($hashType)"
-                  Write-Host "  URL  : $url"
+            $updatedXml += '</metalink>'
 
-                  # 追加到更新 XML
-                  $updatedXml += "  <file name=`"$fileName`">"
-                  $updatedXml += "    <hash type=`"$hashType`">$hash</hash>"
-                  $updatedXml += "    <url>$url</url>"
-                  $updatedXml += "  </file>"
+            # 写入文件
+            $updatedXml | Out-File -Encoding UTF8 $meta4.FullName
 
-                  # 写 Release Note
-                  $releaseText += "$($meta4File.BaseName) [$arch]: KB$kbId -> $fileName`n"
-              }
+            Write-Host "Updated meta4 file: $($meta4.Name)"
+        }
 
-              $updatedXml += '</metalink>'
+    - name: Generate Release Notes
+      shell: pwsh
+      run: |
+        $releaseNotes = @()
+        $meta4Files = Get-ChildItem Scripts/*.meta4
+        foreach ($meta4 in $meta4Files) {
+            [xml]$xmlContent = Get-Content $meta4.FullName
+            foreach ($file in $xmlContent.metalink.file) {
+                $kb = ($file.name -split "_")[1]
+                $releaseNotes += "$($meta4.BaseName): $kb"
+            }
+        }
+        $releaseNotes | Out-File -Encoding UTF8 ReleaseNotes.txt
+        Write-Host "Release notes generated:"
+        Get-Content ReleaseNotes.txt | ForEach-Object { Write-Host $_ }
 
-              # 保存更新后的 meta4 文件
-              $updatedXml | Out-File -FilePath $meta4File.FullName -Encoding utf8
-          }
+    - name: Commit and Push
+      shell: pwsh
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
 
-          # 保存 Release Note
-          $releaseText | Out-File -FilePath $releaseNote -Encoding utf8
+        git checkout -b 2025.12b-test
+        git add Scripts/*.meta4 ReleaseNotes.txt
 
-      - name: Commit & Push Changes
-        shell: pwsh
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add Scripts
-          git add RELEASE_NOTE.txt
-          git commit -m "Auto update meta4 and release note"
-          git push origin HEAD:2025.12b-test
+        git diff --quiet || git commit -m "Update meta4 files and release notes for 2025.12b-test"
+        git push origin 2025.12b-test --force
