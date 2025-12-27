@@ -1,98 +1,90 @@
-name: Update meta4 files
+name: Generate Meta4 & Release Note
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *"
+    inputs:
+      branch:
+        description: 'Source branch to generate meta4'
+        default: '2025.11d'
 
 jobs:
-  update-meta4:
+  build:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.branch }}
 
-      - name: Update meta4 files
+      - name: Set PowerShell Execution Policy
+        run: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+      - name: Parse Meta4 and Generate Release Note
         shell: pwsh
         run: |
-          Set-Location $env:GITHUB_WORKSPACE
+          $ErrorActionPreference = "Stop"
+          
+          $outputDir = "$env:GITHUB_WORKSPACE/Scripts"
+          $releaseNote = "$env:GITHUB_WORKSPACE/RELEASE_NOTE.txt"
+          $branchTarget = "2025.12b-test"
 
-          $meta4Files = Get-ChildItem -Path "Scripts" -Recurse -Filter "*.meta4"
-          if (-not $meta4Files) {
-            Write-Host "No meta4 files found"
-            exit 0
-          }
+          git fetch origin $branchTarget || git checkout -b $branchTarget
 
-          $changed = $false
+          $releaseText = ""
 
-          foreach ($meta4 in $meta4Files) {
+          Get-ChildItem "$outputDir" -Filter "*.meta4" | ForEach-Object {
+              $meta4File = $_
+              [xml]$meta4 = Get-Content -Path $meta4File.FullName
 
-            # -------- 架构从 meta4 文件名识别 --------
-            $meta4Name = $meta4.Name.ToLower()
-            if ($meta4Name -match "_x64\.meta4$") {
-              $arch = "x64"
-            } elseif ($meta4Name -match "_x86\.meta4$") {
-              $arch = "x86"
-            } elseif ($meta4Name -match "_arm64\.meta4$") {
-              $arch = "arm64"
-            } else {
-              continue
-            }
+              # 架构识别
+              $meta4Name = $meta4File.Name.ToLower()
+              if ($meta4Name -match "_x64\.meta4$") { $arch = "x64" }
+              elseif ($meta4Name -match "_x86\.meta4$") { $arch = "x86" }
+              elseif ($meta4Name -match "_arm64\.meta4$") { $arch = "arm64" }
+              else { $arch = "Unknown" }
 
-            $lines = Get-Content $meta4.FullName -Raw -Encoding UTF8
-            $original = $lines
+              $updatedXml = @()
+              $updatedXml += '<metalink xmlns="urn:ietf:params:xml:ns:metalink">'
+              $updatedXml += '  <file name="dummy">DUMMY</file>' # placeholder
 
-            # -------- 匹配 <file> 块（不破坏格式）--------
-            $pattern = '(?s)<file name="([^"]+)">.*?<hash type="sha-1">([^<]+)</hash>.*?<url>([^<]+)</url>.*?</file>'
+              foreach ($file in $meta4.metalink.file) {
+                  $fileName = $file.name
+                  $hashType = $file.hash.type
+                  $hash     = $file.hash.'#text'
+                  $url      = $file.url.'#text'
 
-            $lines = [regex]::Replace($lines, $pattern, {
-              param($m)
+                  if ($fileName -match "kb(\d+)") { $kbId = $matches[1] } else { $kbId = "Unknown" }
 
-              $fileName = $m.Groups[1].Value
-              $hash     = $m.Groups[2].Value
-              $url      = $m.Groups[3].Value
+                  Write-Host "Found KB: $kbId [$arch]"
+                  Write-Host "  Hash : $hash ($hashType)"
+                  Write-Host "  URL  : $url"
 
-              # 文件名中必须包含 kb + 架构
-              if ($fileName -notmatch 'kb\d+' -or $fileName -notmatch "-$arch") {
-                return $m.Value
+                  # 追加到更新 XML
+                  $updatedXml += "  <file name=`"$fileName`">"
+                  $updatedXml += "    <hash type=`"$hashType`">$hash</hash>"
+                  $updatedXml += "    <url>$url</url>"
+                  $updatedXml += "  </file>"
+
+                  # 写 Release Note
+                  $releaseText += "$($meta4File.BaseName) [$arch]: KB$kbId -> $fileName`n"
               }
 
-              if ($url -notmatch 'windowsupdate\.com|delivery\.mp\.microsoft\.com') {
-                return $m.Value
-              }
+              $updatedXml += '</metalink>'
 
-              # -------- 重新从 URL 提取最新文件名 / hash --------
-              $newFile = [System.IO.Path]::GetFileName($url)
-
-              if ($newFile -ne $fileName) {
-                $changed = $true
-                return $m.Value -replace [regex]::Escape($fileName), $newFile
-              }
-
-              return $m.Value
-            })
-
-            if ($lines -ne $original) {
-              Set-Content -Path $meta4.FullName -Value $lines -Encoding UTF8 -NoNewline
-            }
+              # 保存更新后的 meta4 文件
+              $updatedXml | Out-File -FilePath $meta4File.FullName -Encoding utf8
           }
 
-          if (-not $changed) {
-            Write-Host "No meta4 content changed"
-            exit 0
-          }
+          # 保存 Release Note
+          $releaseText | Out-File -FilePath $releaseNote -Encoding utf8
 
-      - name: Commit and push
-        if: success()
+      - name: Commit & Push Changes
         shell: pwsh
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-
-          git status
-          git diff --quiet && exit 0
-
           git add Scripts
-          git commit -m "auto: update meta4 for latest Windows and .NET patches"
-          git push origin master
+          git add RELEASE_NOTE.txt
+          git commit -m "Auto update meta4 and release note"
+          git push origin HEAD:2025.12b-test
