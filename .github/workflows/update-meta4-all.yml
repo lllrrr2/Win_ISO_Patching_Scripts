@@ -1,87 +1,98 @@
-name: Update meta4 from existing KB entries
+name: Update meta4 files
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
 
 jobs:
   update-meta4:
     runs-on: windows-latest
-    permissions:
-      contents: write
 
     steps:
-      - name: Checkout master
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Git identity
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
 
       - name: Update meta4 files
         shell: pwsh
         run: |
           Set-Location $env:GITHUB_WORKSPACE
 
-          $meta4Files = Get-ChildItem Scripts -Recurse -Filter "*.meta4"
-
-          foreach ($meta4 in $meta4Files) {
-              Write-Host "Processing $($meta4.FullName)"
-
-              $raw = Get-Content $meta4.FullName -Raw
-              $xml = [xml]$raw
-
-              $changed = $false
-
-              foreach ($node in $xml.metalink.file) {
-                  $name = $node.name
-
-                  # 从文件名解析 KB（Windows / .NET 通用）
-                  if ($name -match '(kb\d{6,8})') {
-                      $kbId = $Matches[1]
-
-                      # ==================================================
-                      # TODO: 这里接你“真实”的解析结果
-                      # 你已经有的数据来源之一：
-                      # - patch_list.json
-                      # - 你已有的 catalog 抓取逻辑
-                      #
-                      # 最终必须给出：
-                      #   $newName
-                      #   $newHash
-                      #   $newUrl
-                      # ==================================================
-
-                      if (-not $newName -or -not $newHash -or -not $newUrl) {
-                          continue
-                      }
-
-                      if (
-                          $node.name -ne $newName -or
-                          $node.hash.'#text' -ne $newHash -or
-                          $node.url -ne $newUrl
-                      ) {
-                          $node.name = $newName
-                          $node.hash.'#text' = $newHash
-                          $node.url = $newUrl
-                          $changed = $true
-                          Write-Host "Updated ${kbId}"
-                      }
-                  }
-              }
-
-              if ($changed) {
-                  $xml.Save($meta4.FullName)
-              }
+          $meta4Files = Get-ChildItem -Path "Scripts" -Recurse -Filter "*.meta4"
+          if (-not $meta4Files) {
+            Write-Host "No meta4 files found"
+            exit 0
           }
 
-      - name: Commit changes
-        run: |
-          git add Scripts
-          git commit -m "auto: update meta4 from existing KB entries" || echo "No changes"
+          $changed = $false
 
-      - name: Push to master
+          foreach ($meta4 in $meta4Files) {
+
+            # -------- 架构从 meta4 文件名识别 --------
+            $meta4Name = $meta4.Name.ToLower()
+            if ($meta4Name -match "_x64\.meta4$") {
+              $arch = "x64"
+            } elseif ($meta4Name -match "_x86\.meta4$") {
+              $arch = "x86"
+            } elseif ($meta4Name -match "_arm64\.meta4$") {
+              $arch = "arm64"
+            } else {
+              continue
+            }
+
+            $lines = Get-Content $meta4.FullName -Raw -Encoding UTF8
+            $original = $lines
+
+            # -------- 匹配 <file> 块（不破坏格式）--------
+            $pattern = '(?s)<file name="([^"]+)">.*?<hash type="sha-1">([^<]+)</hash>.*?<url>([^<]+)</url>.*?</file>'
+
+            $lines = [regex]::Replace($lines, $pattern, {
+              param($m)
+
+              $fileName = $m.Groups[1].Value
+              $hash     = $m.Groups[2].Value
+              $url      = $m.Groups[3].Value
+
+              # 文件名中必须包含 kb + 架构
+              if ($fileName -notmatch 'kb\d+' -or $fileName -notmatch "-$arch") {
+                return $m.Value
+              }
+
+              if ($url -notmatch 'windowsupdate\.com|delivery\.mp\.microsoft\.com') {
+                return $m.Value
+              }
+
+              # -------- 重新从 URL 提取最新文件名 / hash --------
+              $newFile = [System.IO.Path]::GetFileName($url)
+
+              if ($newFile -ne $fileName) {
+                $changed = $true
+                return $m.Value -replace [regex]::Escape($fileName), $newFile
+              }
+
+              return $m.Value
+            })
+
+            if ($lines -ne $original) {
+              Set-Content -Path $meta4.FullName -Value $lines -Encoding UTF8 -NoNewline
+            }
+          }
+
+          if (-not $changed) {
+            Write-Host "No meta4 content changed"
+            exit 0
+          }
+
+      - name: Commit and push
+        if: success()
+        shell: pwsh
         run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git status
+          git diff --quiet && exit 0
+
+          git add Scripts
+          git commit -m "auto: update meta4 for latest Windows and .NET patches"
           git push origin master
