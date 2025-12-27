@@ -1,95 +1,113 @@
-name: Update Meta4 KB
+name: Update Meta4 KBs
 
 on:
   workflow_dispatch:
 
 jobs:
-  update-meta4:
+  update-kbs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout 2025.11d branch
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: 2025.11d
+          fetch-depth: 0
+          ref: 2025.11d   # 使用 2025.11d 分支作为基准
 
-      - name: Setup PowerShell
-        shell: pwsh
-
-      - name: Update meta4 files
+      - name: Install MSCatalogLTS
         shell: pwsh
         run: |
-          # 遍历 Scripts 文件夹下的所有 meta4 文件
-          $meta4Files = Get-ChildItem -Path Scripts -Filter '*.meta4' -Recurse
+          Install-Module MSCatalogLTS -Force -Scope CurrentUser
 
-          function Get-LatestKB {
-              param(
-                  [string]$KbId,
-                  [string]$Arch
-              )
+      - name: Update Meta4 Files
+        shell: pwsh
+        run: |
+          $metaDir = "$env:GITHUB_WORKSPACE/Scripts"
+          $metaFiles = Get-ChildItem $metaDir -Filter "script_*.meta4"
 
-              # 示例：抓 Microsoft Catalog JSON 页面 (需要改成真实 API 或 HTML 解析)
-              $catalogUrl = "https://www.catalog.update.microsoft.com/Search.aspx?q=$KbId"
-              # 这里可以用 Invoke-WebRequest / Invoke-RestMethod 解析 JSON 或 HTML，返回最新 msu/cab
-              # 为示例返回原值
-              return @{
-                  Url  = "https://catalog.sf.dl.delivery.mp.microsoft.com/fake/$KbId-$Arch.msu"
-                  Hash = "FAKEHASH1234567890"
-              }
-          }
+          $releaseNote = ""
 
-          foreach ($meta4 in $meta4Files) {
+          foreach ($meta4 in $metaFiles) {
+              # -------- 架构从 meta4 文件名识别 --------
               $meta4Name = $meta4.Name.ToLower()
-              if ($meta4Name -match "_x64\.meta4$") { $arch = "x64" }
-              elseif ($meta4Name -match "_x86\.meta4$") { $arch = "x86" }
-              elseif ($meta4Name -match "_arm64\.meta4$") { $arch = "arm64" }
-              else { continue }
+              if ($meta4Name -match "_x64\.meta4$") {
+                  $arch = "x64"
+              } elseif ($meta4Name -match "_x86\.meta4$") {
+                  $arch = "x86"
+              } elseif ($meta4Name -match "_arm64\.meta4$") {
+                  $arch = "arm64"
+              } else {
+                  Write-Host "Skip unknown architecture: $($meta4.Name)"
+                  continue
+              }
 
-              Write-Host "Processing $($meta4.Name) for $arch"
+              Write-Host "`nProcessing $($meta4.Name) [$arch]"
 
-              # 读取 meta4
-              [xml]$xml = Get-Content $meta4.FullName
+              [xml]$xmlDoc = Get-Content $meta4.FullName
 
-              $updatedXml = @()
-              $updatedXml += '<metalink xmlns="urn:ietf:params:xml:ns:metalink">'
-              $updatedXml += "  <generator>Updated by GitHub Actions</generator>"
+              $updated = $false
 
-              foreach ($file in $xml.metalink.file) {
-                  $fileName = $file.name
-                  if ($fileName -match "kb\d+") {
-                      $kbId = $Matches[0].ToUpper()
-                      Write-Host "Found KB: $kbId"
+              foreach ($fileNode in $xmlDoc.metalink.file) {
+                  if ($fileNode.name -match "KB(\d+)") {
+                      $kbId = $Matches[1]
+                      Write-Host "Found KB$kbId"
 
-                      $latest = Get-LatestKB -KbId $kbId -Arch $arch
+                      # 查询 Microsoft Update Catalog 最新文件
+                      $results = Get-MSCatalogUpdate -Search "KB$kbId" -Architecture $arch
+                      if ($results.Count -eq 0) {
+                          Write-Host "No catalog result for KB$kbId [$arch]"
+                          continue
+                      }
 
-                      $hashType = "sha-1"
-                      $hash     = $latest.Hash
-                      $url      = $latest.Url
+                      # 选最新更新
+                      $best = $results | Sort-Object LastUpdated -Descending | Select-Object -First 1
 
-                      Write-Host "Updating KB $kbId -> URL: $url, SHA1: $hash"
+                      foreach ($fileInfo in $best.Files) {
+                          $newName = $fileInfo.Name
+                          $newUrl  = $fileInfo.HttpDownloadUrl
+                          $newHash = $fileInfo.SHA1Hash
 
-                      $updatedXml += "  <file name=`"$fileName`">"
-                      $updatedXml += "    <hash type=`"$hashType`">$hash</hash>"
-                      $updatedXml += "    <url>$url</url>"
-                      $updatedXml += "  </file>"
+                          Write-Host "KB$kbId -> Name: $newName | Hash: $newHash | URL: $newUrl"
+
+                          # 如果和现有不一样则替换
+                          if ($fileNode.name -ne $newName -or $fileNode.url -ne $newUrl -or $fileNode.hash.'#text' -ne $newHash) {
+                              Write-Host "Updating KB$kbId: $($fileNode.name) -> $newName"
+                              $releaseNote += "[$($meta4.Name)] KB$kbId: $($fileNode.name) -> $newName`n"
+
+                              $fileNode.name = $newName
+                              $fileNode.url  = $newUrl
+                              $fileNode.hash.'#text' = $newHash
+
+                              $updated = $true
+                          }
+                      }
                   }
               }
 
-              $updatedXml += '</metalink>'
-              $updatedXml -join "`n" | Set-Content $meta4.FullName -Encoding UTF8
+              if ($updated) {
+                  $xmlDoc.Save($meta4.FullName)
+                  Write-Host "Saved updated meta4: $($meta4.Name)"
+              } else {
+                  Write-Host "No updates for $($meta4.Name)"
+              }
           }
 
-      - name: Commit changes
+          if ($releaseNote -ne "") {
+              $releaseNote | Out-File "$env:GITHUB_WORKSPACE/RELEASE_NOTE.txt"
+              Write-Host "`nRelease Note:`n$releaseNote"
+          } else {
+              Write-Host "No KB updates detected."
+          }
+
+      - name: Commit & Push changes
         shell: pwsh
         run: |
           git config user.name "github-actions"
-          git config user.email "actions@github.com"
-
-          git add Scripts
-          $status = git status --porcelain
-          if ($status) {
-              git commit -m "Update meta4 KB to latest (2025.12b-test)"
+          git config user.email "github-actions@github.com"
+          git add Scripts RELEASE_NOTE.txt
+          if (-not (git diff --cached --quiet)) {
+              git commit -m "Update meta4 KBs via MSCatalogLTS"
               git push origin HEAD:2025.12b-test
           } else {
-              Write-Host "No changes to commit."
+              Write-Host "Nothing to commit."
           }
