@@ -1,19 +1,20 @@
-﻿<metalink xmlns="urn:ietf:params:xml:ns:metalink"
-	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="metalink4.xsd">
-	<file name="windows10.0-kb5074976-arm64_b1d686484544d5215127b870c5710a4bde1e7d58.msu">
-		<hash type="sha-1">b1d686484544d5215127b870c5710a4bde1e7d58</hash>
-		<url>https://catalog.s.download.windowsupdate.com/d/msdownload/update/software/updt/2025/12/windows10.0-kb5074976-arm64_b1d686484544d5215127b870c5710a4bde1e7d58.msu</url>
-	</file>
-	<file name="windows10.0-kb5015684-arm64_a4cc6e95084da14adb972e1d67cf573a244ed7a3.msu">
-		<hash type="sha-1">a4cc6e95084da14adb972e1d67cf573a244ed7a3</hash>
-		<url>https://catalog.s.download.windowsupdate.com/c/upgr/2022/07/windows10.0-kb5015684-arm64_a4cc6e95084da14adb972e1d67cf573a244ed7a3.msu</url>
-	</file>
-	<file name="windows10.0-kb5062682-arm64_0139af354cf895bf9a6ec2185adcf595b1cde661.cab">
-		<hash type="sha-1">0139af354cf895bf9a6ec2185adcf595b1cde661</hash>
-		<url>https://catalog.s.download.windowsupdate.com/d/msdownload/update/software/crup/2025/07/windows10.0-kb5062682-arm64_0139af354cf895bf9a6ec2185adcf595b1cde661.cab</url>
-	</file>
-	<file name="windows10.0-kb5067017-arm64_162aa64ca3817e0f6c0925b4c14929a1c16a0810.cab">
-		<hash type="sha-1">162aa64ca3817e0f6c0925b4c14929a1c16a0810</hash>
-		<url>https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/crup/2025/10/windows10.0-kb5067017-arm64_162aa64ca3817e0f6c0925b4c14929a1c16a0810.cab</url>
-	</file>
+<metalink xmlns="urn:ietf:params:xml:ns:metalink">
+  <files>
+  <file name="windows10.0-kb5074976-arm64_b1d686484544d5215127b870c5710a4bde1e7d58.msu">
+    <hash type="sha-1">b1d686484544d5215127b870c5710a4bde1e7d58</hash>
+    <url>https://catalog.s.download.windowsupdate.com/d/msdownload/update/software/updt/2025/12/windows10.0-kb5074976-arm64_b1d686484544d5215127b870c5710a4bde1e7d58.msu</url>
+  </file>
+  <file name="windows10.0-kb5015684-arm64_a4cc6e95084da14adb972e1d67cf573a244ed7a3.msu">
+    <hash type="sha-1">a4cc6e95084da14adb972e1d67cf573a244ed7a3</hash>
+    <url>https://catalog.s.download.windowsupdate.com/c/upgr/2022/07/windows10.0-kb5015684-arm64_a4cc6e95084da14adb972e1d67cf573a244ed7a3.msu</url>
+  </file>
+  <file name="windows10.0-kb5062682-arm64_0139af354cf895bf9a6ec2185adcf595b1cde661.cab">
+    <hash type="sha-1">0139af354cf895bf9a6ec2185adcf595b1cde661</hash>
+    <url>https://catalog.s.download.windowsupdate.com/d/msdownload/update/software/crup/2025/07/windows10.0-kb5062682-arm64_0139af354cf895bf9a6ec2185adcf595b1cde661.cab</url>
+  </file>
+  <file name="windows10.0-kb5067017-arm64_162aa64ca3817e0f6c0925b4c14929a1c16a0810.cab">
+    <hash type="sha-1">162aa64ca3817e0f6c0925b4c14929a1c16a0810</hash>
+    <url>https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/crup/2025/10/windows10.0-kb5067017-arm64_162aa64ca3817e0f6c0925b4c14929a1c16a0810.cab</url>
+  </file>
+  </files>
 </metalink>

@@ -1,0 +1,102 @@
+name: Update Windows ISO Patch Meta4
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *' # 每天凌晨 2 点运行，可按需修改
+
+jobs:
+  update-meta4:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up PowerShell
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # -------- 进入 Scripts 目录 --------
+          $metaDir = "$env:GITHUB_WORKSPACE/Scripts"
+          Write-Host "Scanning meta4 files in $metaDir"
+
+          # -------- 遍历 meta4 文件 --------
+          $metaFiles = Get-ChildItem $metaDir -Filter *.meta4
+          foreach ($meta4 in $metaFiles) {
+
+              # -------- 架构识别 --------
+              $meta4Name = $meta4.Name.ToLower()
+              if ($meta4Name -match "_x64\.meta4$") {
+                $arch = "x64"
+              } elseif ($meta4Name -match "_x86\.meta4$") {
+                $arch = "x86"
+              } elseif ($meta4Name -match "_arm64\.meta4$") {
+                $arch = "arm64"
+              } else {
+                Write-Host "Skipping unrecognized architecture: $($meta4.Name)"
+                continue
+              }
+
+              Write-Host "Processing $($meta4.Name) (arch: $arch)"
+
+              # -------- 读取 meta4 内容 --------
+              [xml]$xml = Get-Content $meta4.FullName
+              $updatedXml = @()
+              $updatedXml += '<metalink xmlns="urn:ietf:params:xml:ns:metalink">'
+              $updatedXml += '  <files>'
+
+              foreach ($fileNode in $xml.metalink.file) {
+
+                  $fileName = $fileNode.name
+                  $hashType = $fileNode.hash.type
+                  $hash     = $fileNode.hash.'#text'
+                  $url      = $fileNode.url
+
+                  # -------- 输出抓取到的 KB、Hash、URL --------
+                  if ($fileName -match "kb(\d+)") {
+                    $kbId = $matches[1]
+                    Write-Host "Found KB${kbId}: Name=$fileName | Hash=$hash | URL=$url"
+
+                    # -------- 调用 MSCatalogLTS 查询最新 KB --------
+                    # 假设你有 MSCatalogLTS 模块或函数：Get-MSCatalogLTSLatest
+                    try {
+                        $latest = Get-MSCatalogLTSLatest -KB $kbId -Arch $arch
+                        if ($latest) {
+                            $newName = $latest.Name
+                            $newHash = $latest.Hash
+                            $newUrl  = $latest.Url
+                            Write-Host "Updating KB${kbId}: $fileName -> $newName | Hash: $newHash | URL: $newUrl"
+
+                            $fileName = $newName
+                            $hash     = $newHash
+                            $url      = $newUrl
+                        }
+                    } catch {
+                        Write-Host "No update found for KB${kbId}, keep existing."
+                    }
+                  }
+
+                  # -------- 写入更新后的 XML --------
+                  $updatedXml += "  <file name=`"$fileName`">"
+                  $updatedXml += "    <hash type=`"$hashType`">$hash</hash>"
+                  $updatedXml += "    <url>$url</url>"
+                  $updatedXml += "  </file>"
+              }
+
+              $updatedXml += '  </files>'
+              $updatedXml += '</metalink>'
+
+              # -------- 保存回文件 --------
+              $updatedXml | Out-File -Encoding utf8 $meta4.FullName
+              Write-Host "Updated file saved: $($meta4.Name)"
+          }
+
+      - name: Commit and Push changes
+        shell: pwsh
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add Scripts
+          git diff-index --quiet HEAD || git commit -m "Update meta4 patches"
+          git push origin HEAD
