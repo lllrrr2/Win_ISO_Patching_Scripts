@@ -1,4 +1,4 @@
-### Win_ISO_Patching_Scripts
+﻿### Win_ISO_Patching_Scripts
 
 [中文说明](https://github.com/adavak/Win_ISO_Patching_Scripts/blob/master/README_cn.md)
 
@@ -11,16 +11,17 @@
 
 ###### 支持的 Windows 版本：
 
-|名称|内部版本（最后更新：2026年4月30日）|
+|名称|内部版本（最后更新：2026年9月9日）|
 |---|---|
-|**Windows 10 企业版 LTSB 2016、Windows Server 2016**|**Build 14393.9062**|
-|**Windows 10 企业版 LTSC 2019、Windows Server 2019**|**Build 17763.8647（2024-6，Arm 版本生命终止）**|
-|**Windows 10 22H2、Windows 10 企业版 LTSC 2021**|**Build 1904x.7184**|
-|**Windows Server 2022**|**Build 20348.5024**|
-|**Windows 11 23H2**|**Build 22631.6936**|
-|**Windows Server 2025**|**Build 26100.32698**|
-|**Windows 11 25H2、Windows 11 企业版 LTSC 2024**|**Build 26200.8328**|
-|**Windows 11 26H1**|**Build 28000.1896（x64 版本不推荐）**|
+|**Windows 10 企业版 LTSB 2016、Windows Server 2016**|**Build 14393.9512**|
+|**Windows 10 企业版 LTSC 2019、Windows Server 2019**|**Build 17763.9245（2024-6，Arm 版本生命终止）**|
+|**Windows 10 22H2、Windows 10 企业版 LTSC 2021**|**Build 1904x.7725**|
+|**Windows Server 2022**|**Build 20348.5622**|
+|**Windows 11 23H2**|**Build 22631.7517**|
+|**Windows Server 2025**|**Build 26100.33438**|
+|**Windows 11 25H2、Windows 11 企业版 LTSC 2024**|**Build 26200.9445**|
+|**Windows 11 26H2**|**Build 26300.9278（默认不集成，W10UI.ini 中 apply26h2=1 开启）**|
+|**Windows 11 26H1**|**Build 28000.2954（x64 版本不推荐）**|
 
 ###### 一些设置（位于文件夹根目录 W10UI.ini）：
 |值（预设）|说明|
@@ -30,6 +31,7 @@
 |**AutoStart = 1**|对于多版本映像，脚本默认集成全部映像并自动开始，如需选择映像内的特殊版本，比如只选择生成专业版的集成更新映像等。请改成0。（脚本运行后，按"8"选择版本，可以选择多个版本，选择好后按"0"开始。）|
 |**ltscfix = 1**|对 LTSC 2021 和 2024 的库文件修复（官方修正后移除此选项），如不想修复。请改成0|
 |**netfx481 = 1**|对 .net framework 4.8.1 的支持，如不想安装。请改成0|
+|**apply26h2 = 0**|默认不集成 Windows 11 26H2 启用包补丁（KB5121794），25H2/26H2 ISO 均按 25H2 处理。如需集成 26H2 补丁（25H2 ISO 集成后也会升级至 26H2）。请改成1|
 |**nosuggapp = 0**|若想禁用 Windows 全新安装后擅自安装三方 App。请改成1|
 |**nosuggtip = 0**|若想禁用 Windows 在各处无用的建议提示和功能。请改成1|
 |**norestorage = 0**|若想禁用保留存储的空间占用。请改成1|
